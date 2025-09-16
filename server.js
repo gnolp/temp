@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 
 const wss = new WebSocket.Server({ port: 8080 });
-const videoFile = path.join(__dirname, "sample.mp4");
+const videoFile = path.join(__dirname, "sample.mp4"); //mock data
 
 // Config
 const BUFFER_SIZE = 100;        // độ trễ buffer
@@ -24,27 +24,63 @@ const cameras = {
 
 // AI worker
 const aiWorker = spawn("python", ["ai_worker_yolo.py"]);
-aiWorker.on("error", (err) => console.error("❌ AI Worker error:", err));
-aiWorker.on("exit", (code) => console.log(`🤖 AI Worker exited with code ${code}`));
+aiWorker.on("error", (err) => console.error("AI Worker error:", err));
+aiWorker.on("exit", (code) => console.log(`AI Worker exited with code ${code}`));
+
+
 
 aiWorker.stdout.on("data", (data) => {
-  try {
-    const result = JSON.parse(data.toString());
-    const { camId, frameNumber, results } = result;
+  const lines = data.toString().split("\n").filter(Boolean);
+  for (const line of lines) {
+    try {
+      const result = JSON.parse(line);
 
-    // tìm frame trong buffer và gán kết quả
-    const frameObj = frameBuffer[camId]?.find(f => f.frameNumber === frameNumber);
-    if (frameObj) {
-      frameObj.aiResults = results;
-      // console.log(`✅ Gán AI result vào frame ${frameNumber} (${camId})`);
+      switch (result.type) {
+        case "update-model":
+          console.log(`✅ Model updated for ${result.camId}:`, result.models);
+          break;
+
+        case "detect": {
+          const { camId, frameNumber, results } = result;
+          const frameObj = frameBuffer[camId]?.find(f => f.frameNumber === frameNumber);
+          if (frameObj) {
+            frameObj.aiResults = results ?? {}; // luôn gán {} nếu null
+            // console.log(`✅ Gán AI result vào frame ${frameNumber} (${camId})`);
+          }
+          break;
+        }
+
+        case "error":
+          console.error("❌ Python error:", result.error);
+          break;
+
+        default:
+          console.log("ℹ️ Unknown message:", result);
+      }
+    } catch (e) {
+      console.error("❌ Parse error:", e.message, "Raw:", line);
     }
-  } catch (e) {
-    console.error("❌ Parse error:", e.message);
   }
 });
 
+
 aiWorker.stderr.on("data", (data) => {
   console.error("AI Worker error:", data.toString());
+});
+process.on("message", (msg) => {
+  if (msg.type === "init") {
+    msg.cameras.forEach(cam => addCamera(cam.id, cam.url));
+  }
+  if (msg.type === "add-camera") {
+    addCamera(msg.cam.id, msg.cam.url);
+  }
+  if (msg.type === "remove-camera") {
+    removeCamera(msg.camId);
+  }
+  if (msg.type === "update-model") {
+    console.log("[Server] = update model:",msg.camId,": ", msg.models)
+    aiWorker.stdin.write(JSON.stringify(msg) + "\n");
+  }
 });
 
 // WebSocket
@@ -52,6 +88,17 @@ wss.on("connection", (ws) => {
   console.log("🔌 Client connected");
   ws.on("close", () => console.log("❌ Client disconnected"));
 });
+function addCamera(camId, url) {
+  if (cameras[camId]) return;
+  cameras[camId] = url;
+  startStream(camId, url);
+}
+function removeCamera(camId) {
+  if (!cameras[camId]) return;
+  delete cameras[camId];
+  clearInterval(sendIntervals[camId]);
+  console.log(`🗑️ Camera ${camId} removed`);
+}
 
 // Bắt đầu stream
 function startStream(camId, videoSource) {
@@ -65,6 +112,7 @@ function startStream(camId, videoSource) {
   isBufferReady[camId] = false;
 
   const args = [
+    "-loglevel", "error",
     "-re",              // realtime
     '-stream_loop','-1',
     "-i", videoSource,
@@ -76,7 +124,7 @@ function startStream(camId, videoSource) {
   ];
 
   const ffmpeg = spawn(ffmpegPath, args);
-  console.log(`🎬 Starting ffmpeg for ${camId}`);
+  console.log(`Starting ffmpeg for ${camId}`);
 
   ffmpeg.stdout.on("data", (frame) => {
     frameCounters[camId]++;
@@ -98,6 +146,7 @@ function startStream(camId, videoSource) {
     // gửi đi detect mỗi DETECTION_INTERVAL frame
     if (frameCounters[camId] % DETECTION_INTERVAL === 0) {
       aiWorker.stdin.write(JSON.stringify({
+        type: "detect",
         camId,
         frame: frame.toString("base64"),
         timestamp: frameObj.timestamp,
@@ -117,6 +166,9 @@ function startStream(camId, videoSource) {
     const msg = d.toString();
     if (!msg.includes("frame=")) {
       console.log(`📝 ffmpeg[${camId}]:`, msg);
+    }
+    else if (msg.includes("error") || msg.includes("not found")) {
+      process.send?.({ type: "camera-error", camId: cam.id, message: msg });
     }
   });
 

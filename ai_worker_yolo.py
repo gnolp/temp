@@ -8,7 +8,7 @@ models = {
     "yolo_person": YOLO("yolov8n.pt"),
     "yolo_custom": YOLO("checkpoint_last.pt")
 }
-
+camera_models = {}
 def process_frame(data):
     """Xử lý một frame và trả về kết quả detection"""
     try:
@@ -23,9 +23,13 @@ def process_frame(data):
 
         if img is None:
             return None
-
+        model_list = camera_models.get(cam_id, [])
         results_all = {}
-        for model_name, model in models.items():
+        #for model_name, model in models.items(): mock model, sau test sẽ để model_list
+        for model_name in model_list:   
+            if model_name not in models:
+                continue
+            model = models[model_name]
             results = model.predict(img, imgsz=640, verbose=False)
             detections = []
             for r in results:
@@ -36,8 +40,9 @@ def process_frame(data):
                         "xyxy": box.xyxy[0].tolist()
                     })
             results_all[model_name] = detections
-
+            # print(results_all)
         return {
+            "type": "detect", 
             "camId": cam_id,
             "timestamp": timestamp,
             "frameNumber": frame_number,
@@ -50,11 +55,25 @@ def read_stdin():
     """Đọc và xử lý frame từ stdin"""
     for line in sys.stdin:
         try:
-            data = json.loads(line)
-            result = process_frame(data)
-            
-            if result:
-                print(json.dumps(result), flush=True)
+            msg = json.loads(line)
+            if msg["type"] == "update-model":
+                camera_models[msg["camId"]] = msg["models"]
+                print(
+                    json.dumps({
+                        "type": "update-model",
+                        "camId": msg["camId"],
+                        "models": msg["models"]
+                    }),
+                    flush=True
+                )
+            elif msg["type"] == "detect":
+                result = process_frame(msg)
+                if result:
+                    # # result["type"] = "detect"
+                    # out = json.dumps(result)
+                    # sys.stderr.write(f"[PYTHON-DEBUG] {out}\n")
+                    # print(out, flush=True)
+                    print(json.dumps(result), flush=True)
                 
         except Exception as e:
             print(json.dumps({"error": str(e)}), flush=True)

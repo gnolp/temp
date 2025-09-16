@@ -2,7 +2,12 @@ const container = document.getElementById("container");
 
 // Lưu camera canvas & context
 const cameras = {};
-
+// // mock dữ liệu để test.
+document.getElementById("btnSetModel").addEventListener("click", () => {
+  const camId = "cam1";
+  const models = ["yolo_person"];
+  window.api.updateModel(camId, models);
+});
 // Debug info
 let frameCount = 0;
 let lastFrameTime = Date.now();
@@ -85,7 +90,7 @@ function connectWebSocket() {
         const data = JSON.parse(event.data);
         if (data.type === "frame") {
           const { camId, aiResults, frameNumber } = data;
-
+          console.log(data);
           if (!cameras[camId]) createCameraUI(camId);
 
           frameCount++;
