@@ -6,7 +6,7 @@ const fs = require("fs");
 
 const wss = new WebSocket.Server({ port: 8080 });
 const videoFile = path.join(__dirname, "sample.mp4"); //mock data
-
+const videoFile1 = path.join(__dirname, "sample2.mp4");
 // Config
 const BUFFER_SIZE = 100;        // độ trễ buffer
 const DETECTION_INTERVAL = 5;   // cứ 5 frame gửi 1 frame cho AI
@@ -16,10 +16,11 @@ const frameBuffer = {};
 const frameCounters = {};
 const isBufferReady = {};
 const sendIntervals = {};
-
+const cameraConnections = {};
 // Camera list
 const cameras = {
-  cam1: videoFile
+  cam1: videoFile,
+  cam2: videoFile1
 };
 
 // AI worker
@@ -45,7 +46,7 @@ aiWorker.stdout.on("data", (data) => {
           const frameObj = frameBuffer[camId]?.find(f => f.frameNumber === frameNumber);
           if (frameObj) {
             frameObj.aiResults = results ?? {}; // luôn gán {} nếu null
-            // console.log(`✅ Gán AI result vào frame ${frameNumber} (${camId})`);
+            console.log(`✅ Gán AI result vào frame ${frameNumber} (${camId})`, frameObj.aiResults);
           }
           break;
         }
@@ -84,7 +85,17 @@ process.on("message", (msg) => {
 });
 
 // WebSocket
-wss.on("connection", (ws) => {
+wss.on("connection", (ws,req) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const camId = url.searchParams.get("camId");
+
+  if (!cameras[camId]) {
+    ws.close();
+    return;
+  }
+
+  cameraConnections[camId].add(ws);
+  console.log(`✅ Client connected to ${camId}`);
   console.log("🔌 Client connected");
   ws.on("close", () => console.log("❌ Client disconnected"));
 });
@@ -192,17 +203,24 @@ function startSendingToFrontend(camId) {
         aiResults: frameObj.aiResults
       };
 
-      wss.clients.forEach((c) => {
-        if (c.readyState === WebSocket.OPEN) {
-          c.send(JSON.stringify(meta));
-          c.send(frameObj.frameData); // gửi frame binary
+      cameraConnections[camId].forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(meta));
+          ws.send(frameObj.frameData); // gửi binary
         }
       });
     }
   }, 100); // 10 fps
 }
-
+// ws/localhost:8080
 // Start all cameras
 Object.entries(cameras).forEach(([camId, src]) => startStream(camId, src));
+Object.keys(cameras).forEach(camId => {
+  frameBuffer[camId] = [];
+  cameraConnections[camId] = new Set();
+});
+
+
+
 
 console.log("✅ Server running on ws://localhost:8080");
