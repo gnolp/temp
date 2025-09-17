@@ -6,7 +6,7 @@ const fs = require("fs");
 const { VehicleTracker } = require("./Count_vehicle_in_line.js");
 
 const wss = new WebSocket.Server({ port: 8080 });
-const videoFile = path.join(__dirname, "sample.mp4"); //mock data
+const videoFile = path.join(__dirname, "traffic_video.avi"); //mock data
 const videoFile1 = path.join(__dirname, "traffic_video.avi");
 // Config
 const BUFFER_SIZE = 100;        // độ trễ buffer
@@ -29,6 +29,16 @@ const cameras = {
   cam2: videoFile1
 };
 const cameraLines = {
+  cam1: [
+    {
+      id: 'line1',
+      x1: 150, y1: 540,    // Line ngang ở giữa
+      x2: 650, y2: 540,
+      width: 30,
+      color: '#00FF00',   // Xanh lá
+      name: 'Line 1'
+    },
+  ],
   cam2: [
     {
       id: 'line1',
@@ -401,35 +411,61 @@ function startCameraStatsInterval(camId, intervalTime = SAVE_INTERVAL, autoClear
   }
 
   statsIntervals[camId] = setInterval(() => {
-    console.log(`\n📊 ===== CAMERA ${camId.toUpperCase()} STATISTICS =====`);
+    // console.log(`\n📊 ===== CAMERA ${camId.toUpperCase()} STATISTICS =====`);
 
-    // Thống kê tổng quan cho camera này
+    // // Thống kê tổng quan cho camera này
     const cameraStats = getCameraStatistics(camId);
-    console.log(`🎯 CAMERA ${camId} SUMMARY:`);
-    console.log(`🎥 Total: ${cameraStats.totalVehicles} vehicles`);
-
-    if (Object.keys(cameraStats.byType).length > 0) {
-      Object.keys(cameraStats.byType).forEach(vehicleType => {
-        console.log(`   └─ ${vehicleType}: ${cameraStats.byType[vehicleType]}`);
-      });
-    } else {
-      console.log("   └─ No vehicles counted yet");
-    }
-
-    // Chi tiết theo line
-    console.log(`\n📏 DETAILED BY LINES:`);
     const stats = vehicleCountStats[camId];
-    if (!stats || stats.line.length === 0) {
-      console.log("   No data yet");
-    } else {
-      stats.line.forEach(line => {
-        console.log(`   📏 Line ${line.line_id}:`);
-        if (Object.keys(line.object).length === 0) {
-          console.log("     No vehicles counted");
-        } else {
-          Object.keys(line.object).forEach(vehicleType => {
-            console.log(`     ${vehicleType}: ${line.object[vehicleType]}`);
-          });
+    // console.log(`🎯 CAMERA ${camId} SUMMARY:`);
+    // console.log(`🎥 Total: ${cameraStats.totalVehicles} vehicles`);
+
+    // if (Object.keys(cameraStats.byType).length > 0) {
+    //   Object.keys(cameraStats.byType).forEach(vehicleType => {
+    //     console.log(`   └─ ${vehicleType}: ${cameraStats.byType[vehicleType]}`);
+    //   });
+    // } else {
+    //   console.log("   └─ No vehicles counted yet");
+    // }
+
+    // // Chi tiết theo line
+    // console.log(`\n📏 DETAILED BY LINES:`);
+
+    // if (!stats || stats.line.length === 0) {
+    //   console.log("   No data yet");
+    // } else {
+    //   stats.line.forEach(line => {
+    //     console.log(`   📏 Line ${line.line_id}:`);
+    //     if (Object.keys(line.object).length === 0) {
+    //       console.log("     No vehicles counted");
+    //     } else {
+    //       Object.keys(line.object).forEach(vehicleType => {
+    //         console.log(`     ${vehicleType}: ${line.object[vehicleType]}`);
+    //       });
+    //     }
+    //   });
+    // }
+
+    // 🚀 GỬI DỮ LIỆU QUA MAIN.JS
+    if (process.send) {
+      process.send({
+        type: "periodic-vehicle-stats",
+        camId: camId,
+        timestamp: Date.now(),
+        interval: intervalTime,
+        summary: {
+          totalVehicles: cameraStats.totalVehicles,
+          byType: cameraStats.byType
+        },
+        details: {
+          lines: stats ? stats.line.map(line => ({
+            lineId: line.line_id,
+            vehicles: { ...line.object }
+          })) : []
+        },
+        systemInfo: {
+          frameCount: frameCounters[camId] || 0,
+          trackedVehicles: trackers[camId]?.trackedVehicles?.size || 0,
+          autoClear: autoClear
         }
       });
     }
@@ -523,7 +559,7 @@ setTimeout(() => {
   aiWorker.stdin.write(JSON.stringify({
     type: "update-model",
     camId: "cam2",
-    models: ["yolo_person", "yolo_custom"]
+    models: ["yolo_person"]
   }) + "\n");
 
 }, 2000); // Đợi 2 giây để AI worker khởi động xong

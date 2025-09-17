@@ -26,8 +26,18 @@ function startServer() {
     stdio: ["pipe", "pipe", "pipe", "ipc"]  // thêm ipc + stdout/stderr
   });
   serverProcess.on("message", (msg) => {
-    console.log("From server:", msg);
+    if (msg.type === 'periodic-vehicle-stats') {
+      console.log(`📊 [MAIN] Received stats from ${data.camId}:`);
+      console.log(`   🎥 Total vehicles: ${data.summary.totalVehicles}`);
+      console.log(`   📈 By type:`, data.summary.byType);
+      console.log(`   🕒 Timestamp: ${new Date(data.timestamp).toLocaleTimeString()}`);
+      console.log(`   📊 System: ${data.systemInfo.frameCount} frames, ${data.systemInfo.trackedVehicles} tracked`);
+    }
+    else {
+      console.log("From server:", msg);
+    }
   });
+
   serverProcess.on("exit", (code) => {
     console.log(`Server process exited with code ${code}`);
   });
@@ -38,7 +48,7 @@ async function loadCamerasFromDB() {
     { id: "cam2", url: "rtsp://192.168.1.100/stream" }
   ];
 }
-app.whenReady().then(async() => {
+app.whenReady().then(async () => {
   const cameras = await loadCamerasFromDB();
 
   startServer(); // chạy server song song
@@ -52,7 +62,7 @@ app.whenReady().then(async() => {
   });
 
   ipcMain.on("update-model", (_, { camId, models }) => {
-    console.log("update model:",camId,": ", models );
+    console.log("update model:", camId, ": ", models);
     serverProcess.send({ type: "update-model", camId, models });
   });
   ipcMain.handle("add-camera", async (_, cam) => {
