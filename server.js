@@ -6,7 +6,7 @@ const fs = require("fs");
 const { VehicleTracker } = require("./Count_vehicle_in_line.js");
 
 const wss = new WebSocket.Server({ port: 8080 });
-const videoFile = path.join(__dirname, "sample.mp4"); //mock data
+const videoFile = path.join(__dirname, "traffic_video.avi"); //mock data
 const videoFile1 = path.join(__dirname, "traffic_video.avi");
 // Config
 const BUFFER_SIZE = 100;        // độ trễ buffer
@@ -29,6 +29,16 @@ const cameras = {
   cam2: videoFile1
 };
 const cameraLines = {
+  cam1: [
+    {
+      id: 'line1',
+      x1: 150, y1: 540,    // Line ngang ở giữa
+      x2: 650, y2: 540,
+      width: 30,
+      color: '#00FF00',   // Xanh lá
+      name: 'Line 1'
+    },
+  ],
   cam2: [
     {
       id: 'line1',
@@ -549,7 +559,7 @@ setTimeout(() => {
   aiWorker.stdin.write(JSON.stringify({
     type: "update-model",
     camId: "cam2",
-    models: ["yolo_person", "yolo_custom"]
+    models: ["yolo_person"]
   }) + "\n");
 
 }, 2000); // Đợi 2 giây để AI worker khởi động xong
