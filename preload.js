@@ -1,6 +1,11 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld('electronAPI', {
+console.log("✅ Preload loaded");
+
+contextBridge.exposeInMainWorld('api', {
+    addCamera: (cam) => ipcRenderer.invoke("add-camera", cam),
+    removeCamera: (camId) => ipcRenderer.invoke("remove-camera", camId),
+    updateModel: (camId, models) => ipcRenderer.send("update-model", { camId, models }),
     saveDetection: (data) => ipcRenderer.invoke('save-detection', data),
     getLatestDetections: ({ cameraId, limit }) => ipcRenderer.invoke('get-latest-detections', { cameraId, limit }),
     getCameraList: () => ipcRenderer.invoke('getCameraList'),

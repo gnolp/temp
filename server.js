@@ -401,35 +401,61 @@ function startCameraStatsInterval(camId, intervalTime = SAVE_INTERVAL, autoClear
   }
 
   statsIntervals[camId] = setInterval(() => {
-    console.log(`\n📊 ===== CAMERA ${camId.toUpperCase()} STATISTICS =====`);
+    // console.log(`\n📊 ===== CAMERA ${camId.toUpperCase()} STATISTICS =====`);
 
-    // Thống kê tổng quan cho camera này
+    // // Thống kê tổng quan cho camera này
     const cameraStats = getCameraStatistics(camId);
-    console.log(`🎯 CAMERA ${camId} SUMMARY:`);
-    console.log(`🎥 Total: ${cameraStats.totalVehicles} vehicles`);
-
-    if (Object.keys(cameraStats.byType).length > 0) {
-      Object.keys(cameraStats.byType).forEach(vehicleType => {
-        console.log(`   └─ ${vehicleType}: ${cameraStats.byType[vehicleType]}`);
-      });
-    } else {
-      console.log("   └─ No vehicles counted yet");
-    }
-
-    // Chi tiết theo line
-    console.log(`\n📏 DETAILED BY LINES:`);
     const stats = vehicleCountStats[camId];
-    if (!stats || stats.line.length === 0) {
-      console.log("   No data yet");
-    } else {
-      stats.line.forEach(line => {
-        console.log(`   📏 Line ${line.line_id}:`);
-        if (Object.keys(line.object).length === 0) {
-          console.log("     No vehicles counted");
-        } else {
-          Object.keys(line.object).forEach(vehicleType => {
-            console.log(`     ${vehicleType}: ${line.object[vehicleType]}`);
-          });
+    // console.log(`🎯 CAMERA ${camId} SUMMARY:`);
+    // console.log(`🎥 Total: ${cameraStats.totalVehicles} vehicles`);
+
+    // if (Object.keys(cameraStats.byType).length > 0) {
+    //   Object.keys(cameraStats.byType).forEach(vehicleType => {
+    //     console.log(`   └─ ${vehicleType}: ${cameraStats.byType[vehicleType]}`);
+    //   });
+    // } else {
+    //   console.log("   └─ No vehicles counted yet");
+    // }
+
+    // // Chi tiết theo line
+    // console.log(`\n📏 DETAILED BY LINES:`);
+
+    // if (!stats || stats.line.length === 0) {
+    //   console.log("   No data yet");
+    // } else {
+    //   stats.line.forEach(line => {
+    //     console.log(`   📏 Line ${line.line_id}:`);
+    //     if (Object.keys(line.object).length === 0) {
+    //       console.log("     No vehicles counted");
+    //     } else {
+    //       Object.keys(line.object).forEach(vehicleType => {
+    //         console.log(`     ${vehicleType}: ${line.object[vehicleType]}`);
+    //       });
+    //     }
+    //   });
+    // }
+
+    // 🚀 GỬI DỮ LIỆU QUA MAIN.JS
+    if (process.send) {
+      process.send({
+        type: "periodic-vehicle-stats",
+        camId: camId,
+        timestamp: Date.now(),
+        interval: intervalTime,
+        summary: {
+          totalVehicles: cameraStats.totalVehicles,
+          byType: cameraStats.byType
+        },
+        details: {
+          lines: stats ? stats.line.map(line => ({
+            lineId: line.line_id,
+            vehicles: { ...line.object }
+          })) : []
+        },
+        systemInfo: {
+          frameCount: frameCounters[camId] || 0,
+          trackedVehicles: trackers[camId]?.trackedVehicles?.size || 0,
+          autoClear: autoClear
         }
       });
     }
