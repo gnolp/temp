@@ -63,6 +63,14 @@ function startServer() {
   });
 }
 async function loadCamerasFromDB() {
+  const data = await listCameras();
+  if (data && data.length > 0) {
+    return data.map(cam => ({
+      id: cam.code_camera,
+      url: cam.videoUrl
+    }));
+  }
+
   return [
     { id: "cam1", url: path.join(__dirname, "sample.mp4") },
     { id: "cam2", url: "rtsp://192.168.1.100/stream" }
@@ -82,8 +90,8 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.on("update-model", (_, { camId, models }) => {
-    console.log("update model:", camId, ": ", models);
-    console.log("update model:", camId, ": ", models);
+    // console.log("update model:", camId, ": ", models);
+    // console.log("update model:", camId, ": ", models);
     serverProcess.send({ type: "update-model", camId, models });
   });
   ipcMain.handle("get-firstFrame", async (_event, { camId, url }) => {
@@ -135,31 +143,14 @@ app.whenReady().then(async () => {
 // }
 
 
-
-  
-  ipcMain.handle("add-camera", async (_, cam) => {
-    try {
-      // code sql ở đây được
-      serverProcess.send({ type: "add-camera", cam });
-      serverProcess.on("message", (msg) => {
-        if (msg.type === "first-frame") {
-          // Emit về FE (renderer)
-          mainWindow.webContents.send("first-frame", msg.data);
-        }
-      });
-      return { status: "ok", cam };
-    } catch (err) {
-      return { status: "error", message: err.message };
-    }
-  });
   // Xử lý remove-camera bằng handler
   ipcMain.handle("remove-camera", async (_, camId) => {
     try {
-      // code sql ở đây được
+      await softDeleteCamera(camId);
       serverProcess.send({ type: "remove-camera", camId });
-      return { status: "ok", camId };
+      return { success: true, message: `deleted camera with id: ${camId}` };
     } catch (err) {
-      return { status: "error", message: err.message };
+      return { success: false, message: err.message };
     }
   });
 
@@ -515,7 +506,12 @@ app.whenReady().then(async () => {
   // Camera CRUD
   ipcMain.handle("add-new-camera", async (event, cameraData) => {
     try {
-      const { id, code_camera } = await addCamera(cameraData);
+      const { id, code_camera, videoUrl } = await addCamera(cameraData);
+      cam = {
+        id: code_camera,
+        url: videoUrl,
+      }
+      serverProcess.send({ type: "add-camera", cam });
       return { success: true, id, code_camera };
     } catch (error) {
       console.error("add-new-camera error:", error);

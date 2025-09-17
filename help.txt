@@ -1,0 +1,90 @@
+https://docs.google.com/document/d/1Lm430xOO1pYTCvwwEe7RvpQHO3TswXM_/edit :  Database: tạo, insert...
+
+// lấy frame đầu tiên xem trong main.js từ dòng 97 để rõ hơn.
+
+
+// trả về dữ liệu:
+
+- update-models: thêm model vào cam, không trả về.
+- get-firstFrame:
+    +input: camId, url
+    +output : {
+        camId: "cam1",
+        frame: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..." // có thể gán trực tiếp
+    }
+- remove-camera: xóa 1 camera
+    +input: camId
+    +ouput: { success: boolean, message: text };
+-getTrafficHistory: lấy lịch sử
+    +input: { cameraId: 123, timeRange: "7d" }
+    +ouput: {
+        success: true,
+        hours: 168,  // số giờ tương ứng với timeRange, vd "7d" = 24*7 = 168
+        histories: [
+            {
+            timestamp_iso: "2025-09-17T10:00:00.000Z", // ISO string
+            timestamp: "2025-09-17 10:00:00",          // giá trị raw từ DB
+            lines: [
+                {
+                line_id: 1,
+                line_name: "Line A",
+                car: 12,
+                truck: 3,
+                motorcycle: 5,
+                bus: 1,
+                bicycle: 0,
+                other: 2
+                },
+                {
+                line_id: 2,
+                line_name: "Line B",
+                car: 8,
+                truck: 1,
+                motorcycle: 2,
+                bus: 0,
+                bicycle: 0,
+                other: 0
+                }
+            ],
+            total_vehicle: 32, // tổng của tất cả các loại
+            totals_by_type: {
+                car: 20,
+                truck: 4,
+                motorcycle: 7,
+                bus: 1,
+                bicycle: 0,
+                other: 2
+            }
+            },
+            ...
+        ]
+        }
+-add-new-camera: thêm mới camera
+    +input: {
+        const cameraData = {
+            name: "Camera Nguyễn Trãi - Trần Phú",   // tên camera
+            location: "Ngã tư Nguyễn Trãi - Trần Phú", // mô tả vị trí
+            city: "Hà Nội",                          // thành phố
+            district: "Thanh Xuân",                  // quận/huyện
+            intersection: "Nguyễn Trãi - Trần Phú",  // tên giao lộ
+            videoUrl: "rtsp://192.168.1.100/live",   // url stream
+            status: 1,                               // trạng thái (vd: 1 = hoạt động, 0 = lỗi)
+            line_count: 2                            // số line mặc định
+        };
+    }
+    +output: {
+        id: 15,                     // chỉ sử dụng với db
+        code_camera: "CAM-HA1234"   // sử dụng thay camId
+    }
+- getCameraList: lấy danh sách camera
+    +input: none
+    +ouput: danh sách camera như cameraData.
+-updateCamera: update thông tin camera
+    +input: cameraid, updateData={} // dữ liệu như cameraData, nhưng trường nào không cần update thì bỏ trống.
+    +output:
+-line-upsert: nhận tọa độ của các line: // cần sửa
+    +input: { id, camera_id, name, pointLtX, pointLtY, pointRbX, pointRbY }
+    
+-line-list: lấy danh sách các line của camera
+    +input: cameraId (code_camera)
+    +ouput: [{ id, camera_id, name, pointLtX, pointLtY, pointRbX, pointRbY }]
