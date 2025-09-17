@@ -10,18 +10,6 @@ document.getElementById("btnSetModel").addEventListener("click", () => {
   window.api.updateModel(camId, models);
 });
 
-const cameraLines = {
-  cam2: [
-    {
-      id: 'line1',
-      x1: 150, y1: 540,    // Line ngang ở giữa
-      x2: 650, y2: 540,
-      width: 30,
-      color: '#00FF00',   // Xanh lá
-      name: 'Line 1'
-    },
-  ]
-};
 // Debug info
 let frameCount = 0;
 let lastFrameTime = Date.now();
