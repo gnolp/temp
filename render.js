@@ -1,172 +1,132 @@
-const container = document.getElementById("container");
+// ----------- TEST IPC FUNCTIONS -----------
+async function testAllIPC() {
+  const resultDiv = document.createElement('div');
+  resultDiv.style.background = '#eef';
+  resultDiv.style.padding = '10px';
+  resultDiv.style.marginTop = '20px';
+  resultDiv.innerHTML = '<b>Kết quả test IPC:</b><br>';
+  document.body.appendChild(resultDiv);
 
-// Lưu camera canvas & context
-const cameras = {};
+  // Helper to show result
+  function showResult(name, res) {
+    resultDiv.innerHTML += `<b>${name}:</b> <pre>${JSON.stringify(res, null, 2)}</pre>`;
+  }
 
-// Nút test update model
-document.getElementById("btnSetModel").addEventListener("click", () => {
-  const camId = "cam1";
-  const models = ["yolo_person"];
-  window.api.updateModel(camId, models);
+  try {
+    // Test getCameraList
+    if (window.electronAPI.getCameraList) {
+      const camList = await window.electronAPI.getCameraList();
+      showResult('getCameraList', camList);
+    } else {
+      showResult('getCameraList', 'Không có hàm getCameraList');
+    }
+
+    // Test add-new-camera
+    if (window.electronAPI.addNewCamera) {
+      const addCam = await window.electronAPI.addNewCamera({ name: 'TestCam', city: 'HN', status: 1 });
+      showResult('addNewCamera', addCam);
+    } else {
+      showResult('addNewCamera', 'Không có hàm addNewCamera');
+    }
+
+    // Test getLatestDetections
+    if (window.electronAPI.getLatestDetections) {
+      const detections = await window.electronAPI.getLatestDetections({ cameraId: 'cam1', limit: 3 });
+      showResult('getLatestDetections', detections);
+    } else {
+      showResult('getLatestDetections', 'Không có hàm getLatestDetections');
+    }
+
+    // Test violation-add
+    if (window.electronAPI.violationAdd) {
+      const violation = await window.electronAPI.violationAdd({ camera_id: 1, message: 'Test violation' });
+      showResult('violationAdd', violation);
+    } else {
+      showResult('violationAdd', 'Không có hàm violationAdd');
+    }
+
+    // Test line-upsert
+    if (window.electronAPI.lineUpsert) {
+      const lineUpsert = await window.electronAPI.lineUpsert({ camera_id: 1, name: 'TestLine', pointLtX: 10, pointLtY: 20, pointRbX: 30, pointRbY: 40 });
+      showResult('lineUpsert', lineUpsert);
+    } else {
+      showResult('lineUpsert', 'Không có hàm lineUpsert');
+    }
+
+    // Test line-list
+    if (window.electronAPI.lineList) {
+      const lineList = await window.electronAPI.lineList(1);
+      showResult('lineList', lineList);
+    } else {
+      showResult('lineList', 'Không có hàm lineList');
+    }
+
+    // Test getTrafficHistory
+    if (window.electronAPI.getTrafficHistory) {
+      const trafficHistory = await window.electronAPI.getTrafficHistory(1, '24h');
+      showResult('getTrafficHistory', trafficHistory);
+    } else {
+      showResult('getTrafficHistory', 'Không có hàm getTrafficHistory');
+    }
+  } catch (err) {
+    resultDiv.innerHTML += `<b>Lỗi test IPC:</b> <pre>${err.message}</pre>`;
+  }
+}
+
+// Gọi test khi load trang
+window.addEventListener('DOMContentLoaded', testAllIPC);
+let ws = null;
+
+function connect(cameraId) {
+  if (ws) ws.close();
+
+  ws = new WebSocket(`ws://localhost:8080/?camera=${cameraId}`);
+
+  ws.onopen = () => console.log(`Connected to ${cameraId}`);
+  ws.onclose = () => console.log(`Disconnected from ${cameraId}`);
+
+  ws.onmessage = function (event) {
+    try {
+      const data = JSON.parse(event.data);
+
+      const img = document.getElementById('video-frame');
+      img.src = 'data:image/jpeg;base64,' + data.frame;
+
+      const metaDiv = document.getElementById('meta');
+      const metaText = data.metadata && Object.keys(data.metadata).length
+        ? `Frame ID: ${data.id}<br>Metadata: ${JSON.stringify(data.metadata)}`
+        : `Frame ID: ${data.id}<br>No metadata`;
+      metaDiv.innerHTML = metaText;
+    } catch (err) {
+      console.error('❌ Error parsing message:', err);
+    }
+  };
+}
+
+// Initial connection
+const cameraSelect = document.getElementById('camera-select');
+connect(cameraSelect.value);
+
+
+cameraSelect.addEventListener('change', () => {
+  const selectedCamera = cameraSelect.value;
+  connect(selectedCamera);
 });
 
-const cameraLines = {
-  cam2: [
-    {
-      id: 'line1',
-      x1: 150, y1: 540,    // Line ngang ở giữa
-      x2: 650, y2: 540,
-      width: 30,
-      color: '#00FF00',   // Xanh lá
-      name: 'Line 1'
-    },
-  ]
-};
-// Debug info
-let frameCount = 0;
-let lastFrameTime = Date.now();
-
-// ===========================
-// Tạo UI cho 1 camera
-// ===========================
-function createCameraUI(camId) {
-  if (cameras[camId]) return; // tránh tạo 2 lần
-
-  console.log(`🎥 Creating UI for camera: ${camId}`);
-
-  const div = document.createElement("div");
-  div.className = "camera";
-  div.id = `cam-${camId}`;
-
-  const label = document.createElement("div");
-  label.className = "label";
-  label.innerText = camId;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 640;
-  canvas.height = 480;
-  canvas.id = `canvas-${camId}`;
-
-  div.appendChild(canvas);
-  div.appendChild(label);
-  container.appendChild(div);
-
-  cameras[camId] = {
-    canvas,
-    ctx: canvas.getContext("2d"),
-    detections: [],
-    latestMeta: null,
-    img: new Image()
-  };
-
-  console.log(`✅ Camera UI created for ${camId}`);
-}
-
-// ===========================
-// Vẽ bounding boxes
-// ===========================
-function drawDetections(camId) {
-  const cam = cameras[camId];
-  if (!cam) return;
-
-  const ctx = cam.ctx;
-  ctx.clearRect(0, 0, cam.canvas.width, cam.canvas.height);
-
-  // Vẽ frame lên canvas
-  ctx.drawImage(cam.img, 0, 0, cam.canvas.width, cam.canvas.height);
-
-  // Vẽ AI detections
-  cam.detections.forEach(det => {
-    const [x1, y1, x2, y2] = det.xyxy;
-    ctx.strokeStyle = "lime";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(x1, y1 - 20, 120, 20);
-
-    ctx.fillStyle = "yellow";
-    ctx.font = "14px Arial";
-    ctx.fillText(`${det.cls} ${(det.conf * 100).toFixed(1)}%`, x1 + 2, y1 - 5);
-  });
-}
-
-// ===========================
-// Kết nối WS riêng cho từng camera
-// ===========================
-function connectCameraWS(camId) {
-  if (!cameras[camId]) createCameraUI(camId);
-
-  const cam = cameras[camId];
-  const ws = new WebSocket(`ws://localhost:8080?camId=${camId}`);
-  ws.binaryType = "arraybuffer";
-
-  ws.onopen = () => {
-    console.log(`✅ Connected to camera WS: ${camId}`);
-    frameCount = 0;
-    lastFrameTime = Date.now();
-  };
-
-  ws.onmessage = (event) => {
-    // Nếu JSON metadata (AI result)
-    if (typeof event.data === "string") {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "frame") {
-          console.log(data);
-          // Cập nhật detections
-          cam.detections = [];
-          if (data.aiResults && typeof data.aiResults === "object") {
-            Object.keys(data.aiResults).forEach(modelName => {
-              if (Array.isArray(data.aiResults[modelName])) {
-                cam.detections.push(...data.aiResults[modelName]);
-              }
-            });
-          }
-          cam.latestMeta = data;
-
-          // Debug FPS
-          frameCount++;
-          const now = Date.now();
-          if (now - lastFrameTime > 1000) {
-            console.log(`📹 FPS: ${frameCount} (${camId})`);
-            frameCount = 0;
-            lastFrameTime = now;
-          }
-        }
-      } catch (e) {
-        console.error("❌ JSON parse error:", e, event.data);
-      }
+// IPC: Lấy dữ liệu DB mới nhất
+const fetchBtn = document.getElementById('fetch-db');
+const dbResult = document.getElementById('db-result');
+fetchBtn.addEventListener('click', async () => {
+  dbResult.textContent = 'Đang lấy dữ liệu...';
+  try {
+    // Gọi IPC lấy dữ liệu DB mới nhất cho camera 'cam1', lấy 5 bản ghi
+    const res = await window.electronAPI.getLatestDetections({ cameraId: 'cam1', limit: 5 });
+    if (res.success) {
+      dbResult.textContent = JSON.stringify(res.data, null, 2);
+    } else {
+      dbResult.textContent = 'Lỗi: ' + (res.message || 'Không lấy được dữ liệu');
     }
-    // Nếu binary JPEG
-    else if (event.data instanceof ArrayBuffer) {
-      const blob = new Blob([event.data], { type: "image/jpeg" });
-      const url = URL.createObjectURL(blob);
-
-      cam.img.onload = () => {
-        drawDetections(camId);
-        URL.revokeObjectURL(url);
-      };
-      cam.img.src = url;
-    }
-  };
-
-  ws.onerror = (err) => console.error(`❌ WS error (${camId}):`, err);
-  ws.onclose = () => {
-    console.log(`🔌 Camera WS disconnected (${camId}). Reconnect in 3s...`);
-    setTimeout(() => connectCameraWS(camId), 3000);
-  };
-}
-
-// ===========================
-// Kết nối tất cả camera
-// ===========================
-function startAllCameraWS(cameraList) {
-  Object.keys(cameraList).forEach(camId => connectCameraWS(camId));
-}
-
-// ===========================
-// Biết trước danh sách camera
-// ===========================
-const cameraList = { cam1: true, cam2: true };
-startAllCameraWS(cameraList);
+  } catch (err) {
+    dbResult.textContent = 'Lỗi: ' + err.message;
+  }
+});
